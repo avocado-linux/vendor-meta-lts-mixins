@@ -59,7 +59,19 @@ do_rust_setup_snapshot () {
     # are used internally by rust and result in symbol mismatches if we don't
     if [ ! -z "${UNINATIVE_LOADER}" -a -e "${UNINATIVE_LOADER}" ]; then
         for bin in cargo rustc rustdoc; do
-            patchelf ${WORKDIR}/rust-snapshot/bin/$bin --set-interpreter ${UNINATIVE_LOADER}
+            patchelf ${WORKDIR}/rust-snapshot/bin/$bin --set-interpreter ${UNINATIVE_LOADER} \
+                --set-rpath \$ORIGIN/../lib:${STAGING_LIBDIR_NATIVE}
+        done
+        # The snapshot ships prebuilt libs (libLLVM, librustc_driver) whose only
+        # RUNPATH is \$ORIGIN. They need libz.so.1, which the uninative loader
+        # will not find on the host default paths - it is staged in
+        # recipe-sysroot-native, so point at that too.
+        for lib in ${WORKDIR}/rust-snapshot/lib/*.so*; do
+            # Some entries are ld scripts, not ELF (libLLVM-*.so is a 42-byte
+            # INPUT() stub). Use patchelf itself as the ELF test so the loop
+            # skips them without masking a real patchelf failure below.
+            patchelf "$lib" --print-rpath >/dev/null 2>&1 || continue
+            patchelf "$lib" --set-rpath \$ORIGIN:${STAGING_LIBDIR_NATIVE}
         done
     fi
 }
